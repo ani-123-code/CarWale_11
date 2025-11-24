@@ -11,12 +11,16 @@ const { google } = require('googleapis');
 
 dotenv.config()
 
-var gateway = new braintree.BraintreeGateway({
-    environment: braintree.Environment.Sandbox,
-    merchantId: process.env.BRAINTREE_MERCHANT_ID,
-    publicKey: process.env.BRAINTREE_PUBLIC_KEY,
-    privateKey: process.env.BRAINTREE_PRIVATE_KEY
-});
+let gateway = null;
+
+if (process.env.BRAINTREE_MERCHANT_ID && process.env.BRAINTREE_PUBLIC_KEY && process.env.BRAINTREE_PRIVATE_KEY) {
+    gateway = new braintree.BraintreeGateway({
+        environment: braintree.Environment.Sandbox,
+        merchantId: process.env.BRAINTREE_MERCHANT_ID,
+        publicKey: process.env.BRAINTREE_PUBLIC_KEY,
+        privateKey: process.env.BRAINTREE_PRIVATE_KEY
+    });
+}
 
 const storage = multer.diskStorage({
     destination: (req, file, cb) => {
@@ -31,22 +35,28 @@ const upload = multer({ storage });
 const KEYFILEPATH = path.join(__dirname, 'cred.json');
 const SCOPES = ['https://www.googleapis.com/auth/drive'];
 
-const auth = new google.auth.GoogleAuth({
-    keyFile: KEYFILEPATH,
-    scopes: SCOPES,
-});
+let drive = null;
 
-const drive = google.drive({ version: 'v3', auth });
+if (fs.existsSync(KEYFILEPATH)) {
+    const auth = new google.auth.GoogleAuth({
+        keyFile: KEYFILEPATH,
+        scopes: SCOPES,
+    });
+    drive = google.drive({ version: 'v3', auth });
+}
 
 const FOLDER_ID = "1LbbwJK78fjf_ZWYc1HZF5SwwU6reXomQ"; 
 
 const uploadFileToGoogleDrive = async (filePath, fileName) => {
+    if (!drive) {
+        return { webViewLink: filePath.replace(/^uploads\//, '') };
+    }
     const fileMetadata = {
         name: fileName,
-        parents: [FOLDER_ID], 
+        parents: [FOLDER_ID],
     };
     const media = {
-        mimeType: 'image/jpeg', 
+        mimeType: 'image/jpeg',
         body: fs.createReadStream(filePath),
     };
     const response = await drive.files.create({
@@ -284,6 +294,9 @@ const relatedCar = async (req, res) => {
 
 const braintreeTokenController = async(req,res) => {
     try {
+        if (!gateway) {
+            return res.status(500).send({ message: 'Braintree payment gateway not configured. Please set up Braintree credentials in .env file.' });
+        }
         gateway.clientToken.generate({}, function (err, response) {
           if (err) {
             res.status(500).send(err);
@@ -298,6 +311,9 @@ const braintreeTokenController = async(req,res) => {
 
 const brainTreePaymentController = async (req,res) => {
     try {
+        if (!gateway) {
+            return res.status(500).send({ message: 'Braintree payment gateway not configured. Please set up Braintree credentials in .env file.' });
+        }
         const { nonce, cart } = req.body;
         let total = 0;
         cart.map((i) => {
